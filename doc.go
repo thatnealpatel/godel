@@ -7,19 +7,29 @@
 // Start with a single useful command, give different tasks specialized branches,
 // or compose programs that develop their own approaches to smaller goals.
 // The examples below are starting points to adapt: you choose the goal, the
-// work to try, and how the program decides when to stop.
+// work to try, and how the program decides when to stop. The running example
+// develops a textually grounded analysis of Wittgenstein's private-language
+// argument, considers objections, and revises its interpretation.
+//
+// A harness is an ordinary subprocess Node: Set Exec to "claude", "pi",
+// "codex", or another executable, and Args to its noninteractive CLI arguments.
+// Godel sends the task on stdin and uses stdout as the result. Choose text output,
+// not a harness's JSON event stream or response envelope. No backend adapter is
+// required. Work instructions belong in Args; the goal passed to New is context
+// for self-improvement, not a prompt automatically sent to work nodes.
 //
 // # A first program
 //
-// This complete program echoes its task through cat. New supplies the goal,
-// Node describes the command, and Run executes it and returns its output.
-// Neither Yah nor self-improvement is needed for this example.
+// This complete program asks Claude Code to analyze Wittgenstein's
+// private-language argument. New supplies the goal, Node describes the command,
+// and Run executes it and returns its output.
+// Neither Yah nor self-improvement is needed.
 //
 // Put it in main.go in its own module, with a go.mod requiring patel.codes/godel
-// (for example, use go mod init example.com/answer followed by
+// (for example, use go mod init example.com/wittgenstein followed by
 // go get patel.codes/godel). Launch from that module's live source directory
-// with Go and cat on PATH. Node execution requires systemd-run, systemctl,
-// and a working user systemd manager.
+// with Go and an authenticated claude on PATH. Node execution requires
+// systemd-run, systemctl, and a working user systemd manager.
 //
 //	package main
 //
@@ -37,9 +47,18 @@
 //	func main() {
 //		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 //		defer stop()
-//		g := godel.New("Return the task unchanged.")
+//		g := godel.New("Develop a textually grounded analysis of Wittgenstein's private-language argument.")
 //		result, err := g.Run(ctx, &godel.Params{
-//			Node: &godel.Node{Exec: "cat"},
+//			Node: &godel.Node{
+//				Exec: "claude",
+//				Args: []string{
+//					"--print", "--output-format", "text",
+//					"--append-system-prompt", `Analyze the question about Wittgenstein's
+//	private-language argument. Cite relevant sections of Philosophical Investigations,
+//	distinguish textual evidence from interpretation, and consider a serious
+//	objection. Acknowledge uncertainty rather than inventing quotations.`,
+//				},
+//			},
 //		})
 //		if err != nil {
 //			log.Fatal(err)
@@ -49,22 +68,27 @@
 //
 // From the example's module root, run:
 //
-//	printf 'Hello, godel!\n' | go run .
+//	printf '%s\n' "Does Wittgenstein rule out a private language, or only private criteria of correctness?" | go run .
 //
 // # Answer, reconsider, continue
 //
 // A decision tree can choose between doing more work and returning an answer.
-// This complete program uses Decide to ask a Yah selector whether a question
-// needs an answer, a candidate needs revision, or the program is ready to Stop.
+// This complete program uses Pi to assess the analysis of Wittgenstein:
+// Does it need further work on textual support or objections, or is it ready
+// to return? The selector chooses between revision and Stop.
 // Loop carries the work output into a fresh invocation, giving the program
 // another opportunity to examine its answer. SelfImprove lets it also revise
 // the live source between runs. These options can be used independently.
 //
-// Use a separate module as above, with yah on PATH as well. This example grants
-// the improvement agent permission to edit that module's live source. Its
-// prompts ask for preservation of the original question and a correct answer;
-// they do not enforce correctness or eventual termination. Stop is the
-// selector's decision, not an independent certification of the answer.
+// Use a separate module as above, with authenticated pi and codex on PATH.
+// Pi handles selection and answering; Codex handles self-improvement. The Codex
+// flags below bypass approvals and sandboxing so it can edit the live source
+// and retained learning materials. Use them only in a trusted, externally
+// sandboxed environment, or choose permissions appropriate to your setup. The
+// prompts ask for preservation of the original question and a defensible
+// interpretation; they do not enforce scholarly accuracy or eventual
+// termination. Stop is the selector's judgment that the analysis addresses the
+// question, not a claim that a philosophical dispute has been settled.
 //
 // Within a run, the selector and its selected continuation receive the same
 // original input. The selector's text is not passed along as a critique or plan,
@@ -89,37 +113,55 @@
 //		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 //		defer stop()
 //
-//		g := godel.New("Produce correct, concise answers to the original question.")
-//		node := godel.Decide(`Input is either an original question or a handoff
-//	containing the original question and a candidate answer. Check the candidate
-//	against that question. Continue if it is absent or needs correction. Stop only
-//	when the candidate answers the original question correctly and completely;
-//	on Stop, return the answer in your text. You only route: Your reasoning is
-//	not passed to the answering node.`,
-//			godel.Branch{
-//				When: "The original question needs an answer or the candidate needs correction",
-//				Then: &godel.Node{
-//					Exec: "yah",
-//					Args: []string{
-//						"-yolo",
-//						"-replace",
-//						`Answer the original question, or revise the supplied candidate.
+//		g := godel.New("Develop a textually grounded analysis of Wittgenstein's private-language argument.")
+//		node := &godel.Node{
+//			Exec: "pi",
+//			Args: []string{
+//				"--print", "--mode", "text",
+//				"--append-system-prompt", `Input is either an original question or a handoff
+//	containing the original question and a candidate analysis of Wittgenstein's
+//	private-language argument. Select branch 0 if the analysis is absent, lacks
+//	relevant section references to Philosophical Investigations, conflates textual
+//	evidence with interpretation, or neglects a serious objection. Select branch 1
+//	when it addresses the question with a supported interpretation, considers the
+//	objection, and acknowledges remaining uncertainty; put the final analysis in
+//	text. You only route: Your reasoning is not passed to the answering node.
+//	Return only one JSON object, with no Markdown fences or other text:
+//	{"branch":0,"text":""} to answer or revise, or
+//	{"branch":1,"text":"the final answer"} to stop.`,
+//			},
+//			Branches: []godel.Branch{
+//				{
+//					When: "The Wittgenstein analysis needs textual support or further argument",
+//					Then: &godel.Node{
+//						Exec: "pi",
+//						Args: []string{
+//							"--print", "--mode", "text",
+//							"--append-system-prompt", `Analyze the original question about Wittgenstein's
+//	private-language argument, or revise the supplied candidate. Cite relevant
+//	sections of Philosophical Investigations, distinguish textual evidence from
+//	interpretation, consider a serious objection, and acknowledge uncertainty.
+//	Do not invent quotations.
 //	Independently identify any correction needed; you do not receive the selector's
 //	critique. Return a handoff containing the ORIGINAL QUESTION verbatim and the
 //	CANDIDATE ANSWER. Preserve all original qualifications and constraints.`,
+//						},
 //					},
 //				},
+//				{
+//					When: "The Wittgenstein analysis is supported and addresses the question and an objection",
+//					Then: godel.Stop(),
+//				},
 //			},
-//			godel.Branch{
-//				When: "The candidate correctly and completely answers the original question",
-//				Then: godel.Stop(),
-//			},
-//		)
+//		}
 //		result, err := g.Run(ctx, &godel.Params{
 //			Node: node,
 //			SelfImprove: &godel.Node{
-//				Exec: "yah",
-//				Args: []string{"-yolo", "-tmp", "-replace"},
+//				Exec: "codex",
+//				Args: []string{
+//					"exec", "--skip-git-repo-check",
+//					"--dangerously-bypass-approvals-and-sandbox", "-",
+//				},
 //			},
 //			Loop: true,
 //		})
@@ -131,13 +173,22 @@
 //
 // From this example's module root, run:
 //
-//	printf 'What is the capital of France?\n' | go run .
+//	printf '%s\n' "Does Wittgenstein rule out a private language, or only private criteria of correctness?" | go run .
+//
+// A selector must return Godel's JSON object as plain stdout, not Pi's JSON
+// event stream. Branch indices are zero-based positions in Branches. For a
+// generic Node, When labels are not automatically sent to the process: Keep
+// the routing prompt aligned with the branch order. Decide is a Yah-specific
+// convenience that builds this prompt; other harnesses use Node directly.
+// Codex's "-" reads the generated improvement instructions from stdin, while
+// --skip-git-repo-check lets the example run in a module without a Git repository.
 //
 // # Composing specialists and tools
 //
-// Branches can offer different ways of tackling a task. You might route familiar
-// records to a conventional parser and unfamiliar ones to an agent, or give
-// research, implementation, and review their own specialized continuations.
+// Branches can offer different ways of tackling the Wittgenstein question.
+// You might give close reading of Philosophical Investigations, research into
+// competing interpretations, and criticism of the draft their own specialized
+// continuations, or use a conventional tool to look up section references.
 // A continuation can itself be a decision tree. Nodes invoke executables, so
 // existing tools and custom harnesses can sit alongside agents without sharing
 // an implementation language.
@@ -154,25 +205,27 @@
 // Use child as a work node or branch continuation. The child is a separate
 // process with its own New/Run, goal, history, and improvement policy. For
 // example, a child with SelfImprove enabled and Loop disabled can handle one
-// assignment, improve itself, and return its work output to the parent. A
-// looping child retains control until it returns or is stopped. Composition
+// assignment to examine an objection to the private-language argument, improve
+// itself, and return its analysis to the parent. A looping child retains control
+// until it returns or is stopped. Composition
 // happens through subprocess nodes, rather than repeated Run calls in one
 // process.
 //
 // The parent receives the child's stdout. Keep incidental diagnostics on stderr
 // and use stdout for the result and any context you want the parent to receive.
 // For work spanning multiple loop launches, that output might carry an enduring
-// objective, intermediate findings, or references to artifacts. Godel passes the
-// output onward as-is; it does not merge it with the original task.
+// research question, section references, competing readings, or unresolved
+// objections. Godel passes the output onward as-is; it does not merge it with
+// the original task.
 //
 // # Evolving the program
 //
 // Self-improvement can reach beyond prompt edits. The consuming program's live
 // source includes its tree, strategy, dependencies, and custom harness code.
-// You might try splitting a broad branch into specialists, replacing an agent
-// with a conventional tool for a well-understood step, or changing how results
-// are represented. These are possibilities to explore, not a required design
-// or sequence of improvements.
+// For the Wittgenstein program, you might separate textual research from
+// argument criticism, add a section-reference lookup tool, or revise the
+// handoff to retain objections that earlier drafts overlooked. These are
+// possibilities to explore, not a required design or sequence of improvements.
 //
 // With SelfImprove configured, the supplied process reviews the run in light of
 // the goal and may edit that live source and retained learning materials, or
@@ -271,10 +324,10 @@
 //		Args: []string{"--print", "--output-format", "text", "--dangerously-skip-permissions"},
 //	}
 //
-// Set Params.SelfImprove to the chosen improver. The Yah configuration in the
-// complete example likewise deliberately bypasses permission prompts with
-// -yolo. These are configurations, not backend adapters: callers choose suitable
-// noninteractive, permission, and session-retention flags for their harness.
+// Set Params.SelfImprove to the chosen improver. The complete example uses
+// Codex instead. These are configurations, not backend adapters: Callers choose
+// suitable noninteractive, permission, and session-retention flags for their
+// harness. Install and authenticate the chosen CLI before running the program.
 //
 // Each improvement node's Directory controls only that process's cwd, not source
 // identity, archives, or the improvement target. If omitted, it defaults to the
