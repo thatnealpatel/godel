@@ -76,7 +76,6 @@ type runRecord struct {
 	Stopped                bool       `json:"stopped"`
 	Invocations            []metadata `json:"invocations"`
 	ImprovementInvocations []metadata `json:"improvement_invocations,omitempty"`
-	StopCondition          string     `json:"stop_condition"`
 	Sessions               []string   `json:"sessions"`
 	ImprovementResponse    string     `json:"improvement_response"`
 	ImprovementError       string     `json:"improvement_error"`

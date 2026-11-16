@@ -23,13 +23,11 @@ func TestRunRecordHistory(t *testing.T) {
 	}
 	r.Status = "completed"
 	r.FinalResponse = "output\n"
-	zero := 0
 	r.Invocations = []metadata{{
-		Elapsed:     time.Millisecond,
-		BranchIndex: &zero,
+		Elapsed: time.Millisecond,
 	}}
 	r.ImprovementInvocations = []metadata{
-		{Elapsed: time.Millisecond, BranchIndex: &zero},
+		{Elapsed: time.Millisecond},
 		{Error: "executable not found"},
 	}
 	if err := r.save(p); err != nil {
@@ -47,7 +45,16 @@ func TestRunRecordHistory(t *testing.T) {
 		t.Fatalf("lost history: %+v", saved)
 	}
 	if !reflect.DeepEqual(saved.Invocations, r.Invocations) || !reflect.DeepEqual(saved.ImprovementInvocations, r.ImprovementInvocations) {
-		t.Fatalf("lost work/auxiliary trace or nullable branches: %+v", saved)
+		t.Fatalf("lost work/auxiliary trace: %+v", saved)
+	}
+	// Old branch fields are ordinary unknown JSON fields. They must not prevent
+	// the saved response from supplying the next task.
+	legacy := `{"final_response":"old answer", "stop_condition":"finished", "invocations":[{"elapsed_ns":1,"branch_index":0}]}`
+	if err := os.WriteFile(r.path(p), []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if response, err := latestFinalResponse(p); err != nil || response != "old answer" {
+		t.Fatalf("old history response = %q, %v", response, err)
 	}
 	// Creating a fresh record with explicit input does not read old history.
 	if err := os.WriteFile(r.path(p), []byte("not JSON"), 0600); err != nil {

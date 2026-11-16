@@ -5,14 +5,14 @@
 //
 // A harness is just a subprocess. Set [Node.Exec] to "claude", "pi", "codex",
 // or another executable, and Args to its noninteractive CLI arguments.
-// `godel` sends the task on stdin and takes the result from stdout. Choose text
-// output, not the harness's JSON event stream or response envelope. There is
-// no backend adapter to write.
+// `godel` sends the task on stdin and takes the result from stdout. Choose the
+// harness output mode your program wants to interpret. There is no backend
+// adapter to write; the examples use text output.
 //
 // Put work instructions in Args. The goal passed to [New] gives context to
 // self-improvement; it is not automatically sent to work nodes.
 //
-// Start with one useful command. Add branches for specialized tasks, or invoke
+// Start with one useful command. Add transitions for specialized tasks, or invoke
 // another `godel` program to work on a smaller goal. You choose the goal, what
 // work to try, and when the program should stop. The examples below develop a
 // textually grounded analysis of Wittgenstein's private-language argument,
@@ -73,85 +73,116 @@
 //
 // A decision tree lets the program choose whether to do more work or return
 // an answer. This program uses Pi to assess the Wittgenstein analysis: Does it
-// need better textual support or more work on objections? The selector chooses
-// between revision and [Stop].
+// need better textual support or more work on objections? The caller interprets
+// its response in [Node.Next] and chooses revision or [Stop].
 //
 // Loop passes the work output to a fresh invocation so the program can examine
 // its answer again. SelfImprove lets it revise the live source between runs.
 // You can use either option without the other.
 //
 // Use a separate module as above, with authenticated pi and codex on PATH.
-// Pi selects branches and answers; Codex handles self-improvement. The Codex
-// flags bypass approvals and sandboxing. The improvement process can edit the
-// live source and retained learning materials.
+// Pi assesses and answers; Codex handles self-improvement. The improvement
+// process can edit the live source and retained learning materials.
 //
 // The prompts ask the program to preserve the original question and give a
 // defensible interpretation. They do not enforce scholarly accuracy or eventual
-// termination. Stop is the selector's judgment that the analysis addresses the
+// termination. Stop is the program's judgment that the analysis addresses the
 // question. It does not settle the philosophical dispute.
 //
-// Within a run, the selector and its selected continuation get the same original
-// input. The selector's text is not passed on as a critique or plan, so the
+// Within a run, the assessment and its continuation get the same original
+// input. The assessment's output is not passed on as a critique or plan, so the
 // answering node has its own revision instructions. Across loop launches, the
 // example's handoff keeps the original question alongside the candidate. Adapt
-// that output format to carry the context your program needs.
+// that output format to carry the context your program needs. The final result
+// is the complete decision JSON, including the question and answer, unchanged.
 //
 //	package main
 //
 //	import (
 //		"context"
+//		"encoding/json"
 //		"fmt"
 //		"log"
 //		"os"
 //		"os/signal"
+//		"strings"
 //		"syscall"
 //
 //		"patel.codes/godel"
 //	)
+//
+//	// parseDecision interprets this program's response format, not a godel protocol.
+//	func parseDecision(text string) (string, error) {
+//		var decision struct {
+//			Action   string `json:"action"`
+//			Question string `json:"question"`
+//			Answer   string `json:"answer"`
+//		}
+//		if err := json.Unmarshal([]byte(text), &decision); err != nil {
+//			return "", fmt.Errorf("invalid Wittgenstein decision: %w", err)
+//		}
+//		if strings.TrimSpace(decision.Question) == "" {
+//			return "", fmt.Errorf("decision must preserve the original question")
+//		}
+//		switch decision.Action {
+//		case "revise":
+//			return decision.Action, nil
+//		case "done":
+//			if strings.TrimSpace(decision.Answer) == "" {
+//				return "", fmt.Errorf("done decision requires an answer")
+//			}
+//			return decision.Action, nil
+//		default:
+//			return "", fmt.Errorf("unknown decision action %q", decision.Action)
+//		}
+//	}
 //
 //	func main() {
 //		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 //		defer stop()
 //
 //		g := godel.New("Develop a textually grounded analysis of Wittgenstein's private-language argument.")
-//		node := &godel.Node{
+//		revise := &godel.Node{
 //			Exec: "pi",
 //			Args: []string{
 //				"--print", "--mode", "text",
-//				"--append-system-prompt", `Input is either an original question or a handoff
-//	containing the original question and a candidate analysis of Wittgenstein's
-//	private-language argument. Select branch 0 if the analysis is absent, lacks
-//	relevant section references to Philosophical Investigations, conflates textual
-//	evidence with interpretation, or neglects a serious objection. Select branch 1
-//	when it addresses the question with a supported interpretation, considers the
-//	objection, and acknowledges remaining uncertainty; put the final analysis in
-//	text. You only route: Your reasoning is not passed to the answering node.
-//	Return only one JSON object, with no Markdown fences or other text:
-//	{"branch":0,"text":""} to answer or revise, or
-//	{"branch":1,"text":"the final answer"} to stop.`,
-//			},
-//			Branches: []godel.Branch{
-//				{
-//					When: "The Wittgenstein analysis needs textual support or further argument",
-//					Then: &godel.Node{
-//						Exec: "pi",
-//						Args: []string{
-//							"--print", "--mode", "text",
-//							"--append-system-prompt", `Analyze the original question about Wittgenstein's
+//				"--append-system-prompt", `Analyze the original question about Wittgenstein's
 //	private-language argument, or revise the supplied candidate. Cite relevant
 //	sections of Philosophical Investigations, distinguish textual evidence from
 //	interpretation, consider a serious objection, and acknowledge uncertainty.
 //	Do not invent quotations.
-//	Independently identify any correction needed; you do not receive the selector's
-//	critique. Return a handoff containing the ORIGINAL QUESTION verbatim and the
-//	CANDIDATE ANSWER. Preserve all original qualifications and constraints.`,
-//						},
-//					},
-//				},
-//				{
-//					When: "The Wittgenstein analysis is supported and addresses the question and an objection",
-//					Then: godel.Stop(),
-//				},
+//	Independently identify any correction needed; you do not receive the assessment's
+//	critique. Return only a JSON handoff with "question" (the ORIGINAL QUESTION
+//	verbatim, preserving all qualifications and constraints) and "answer" (the
+//	CANDIDATE ANSWER).`,
+//			},
+//		}
+//		node := &godel.Node{
+//			Exec: "pi",
+//			Args: []string{
+//				"--print", "--mode", "text",
+//				"--append-system-prompt", `Input is either an original question or a JSON
+//	handoff containing "question" and "answer" about Wittgenstein's private-language
+//	argument. Assess the analysis. Choose "revise" if it is absent, lacks relevant
+//	section references to Philosophical Investigations, conflates textual evidence
+//	with interpretation, or neglects a serious objection. Choose "done" when it
+//	addresses the question with a supported interpretation, considers the objection,
+//	and acknowledges remaining uncertainty. You only assess: Your critique is not
+//	passed to the answering node.
+//	Return only one JSON object, with no Markdown fences or other text:
+//	{"action":"revise","question":"the original question verbatim","answer":"the candidate, if any"}
+//	or {"action":"done","question":"the original question verbatim","answer":"the final analysis"}.
+//	Preserve all original qualifications and constraints.`,
+//			},
+//			Next: func(result godel.Result) (*godel.Node, error) {
+//				action, err := parseDecision(result.Text)
+//				if err != nil {
+//					return nil, err
+//				}
+//				if action == "revise" {
+//					return revise, nil
+//				}
+//				return godel.Stop(), nil
 //			},
 //		}
 //		result, err := g.Run(ctx, &godel.Params{
@@ -175,14 +206,29 @@
 //
 //	printf '%s\n' "Does Wittgenstein rule out a private language, or only private criteria of correctness?" | go run .
 //
-// A selector must write the `godel` JSON object to stdout, not Pi's JSON event
-// stream. Branch indices are zero-based positions in Branches. For a generic
-// [Node], When labels are not automatically sent to the process. Keep the
-// routing prompt aligned with the branch order.
+// # Making a decision node
+//
+// A [Node] can set Next to choose a continuation from its successful [Result].
+// The consuming Go program owns the harness prompt and output interpretation.
+// The library owns process execution, traversal, and history. It does not parse
+// decision output or add response instructions to the process's arguments.
+//
+// A useful decision has a concrete question and continuations that act on it.
+// In this example, Pi examines textual support, distinctions between claims,
+// and an objection. The caller's parseDecision uses encoding/json to interpret
+// its chosen response format and rejects invalid responses. Next returns the
+// revision node for gaps, or [Stop] for a supported analysis. These criteria
+// and this JSON schema belong to the example, not to `godel`.
+//
+// The revision node receives the original input, not the assessment's reasoning.
+// It has its own instructions for finding and addressing gaps. At Stop, the
+// assessment's entire Result is retained, including the JSON text and session.
+// Next does not extract an answer or rewrite the result. Other programs can
+// interpret plain text, structured output, or any other process response.
 //
 // # Composing specialists and tools
 //
-// Branches can give the Wittgenstein program several ways to approach the
+// Transitions can give the Wittgenstein program several ways to approach the
 // question. You might give close reading of Philosophical Investigations,
 // research into competing interpretations, and criticism of the draft their
 // own continuations. Or use a conventional tool to look up section references.
@@ -199,7 +245,7 @@
 //		Args:      []string{"run", "."},
 //	}
 //
-// Use child as a work node or branch continuation. It runs in a separate
+// Use child as a work node or continuation. It runs in a separate
 // process with its own New/Run, goal, history, and improvement policy.
 // For example, a child with SelfImprove enabled and Loop disabled can examine
 // an objection to the private-language argument, improve itself, and return
@@ -225,7 +271,7 @@
 // With SelfImprove configured, the supplied process reviews the run against
 // the goal. It may edit the live source and retained learning materials, or
 // leave the source alone. Edits affect later launches, not the completed work.
-// The goal passed to New is improvement context. Work nodes and selectors need
+// The goal passed to New is improvement context. Work and decision nodes need
 // their instructions in Args; the goal is not added to their prompts.
 //
 // Each registered program keeps run history, immutable source archives, and
@@ -243,7 +289,7 @@
 // in their output when useful to later work or improvement. Choose a form that
 // fits the program. There is no required evidence schema or evaluation gate.
 // These reports come from the nodes. `godel` itself records invocation timing,
-// errors, selected branch indices, and captured session IDs.
+// errors, and captured session IDs.
 //
 // A source change is an experiment, not proof of improvement. Use results and
 // retained experience to decide what to keep, revise, or try next.
@@ -274,7 +320,7 @@
 // history record, even when its input came from history. A fresh loop launch
 // uses the same fallback rule if the preceding work output was blank.
 //
-// # Reference: processes and routing
+// # Reference: processes and transitions
 //
 // Nodes execute directly, without a shell. Exec names the executable, Args
 // holds its arguments, and Directory selects its operating directory. Env
@@ -290,27 +336,22 @@
 // A failed process returns an error, not a successful partial result.
 // On every returned Run error, the result is nil.
 //
-// Within a run, each selector and selected continuation receives the original
-// task exactly once on stdin, unchanged. It does not receive the preceding
-// selector's output. A selector emits one JSON object with "branch" (an
-// in-range zero-based integer) and "text" (a string), for example
-// {"branch":0,"text":"done"}.
+// Within a run, every continuation receives the original task exactly once on
+// stdin, unchanged. It does not receive the preceding process's output. Args
+// are passed verbatim; the caller supplies all harness and output instructions.
 //
-// [Decide] currently constructs a [Node] with Exec set to "yah" and Args set
-// to "-yolo", "-replace", and the prompt. It adds indexed branch descriptions
-// and JSON response instructions to that prompt. A directly constructed Node
-// receives Args verbatim, including any branch and response instructions. No routing
-// metadata is appended to stdin. Node-reported evidence must fit the output
-// contract, not add diagnostics outside a selector's JSON object.
+// After a successful process invocation, Next receives its Result by value,
+// including Text and Session. A missing Next or a nil continuation with nil
+// error is an ordinary leaf: the current Result becomes the tree's result.
+// Next may return another node to continue, or an error to fail execution.
+// Callback errors are retained in the current invocation's observation; partial
+// output and sessions remain in history. Next is not called after process failure.
 //
-// Responses use standard encoding/json decoding. Unknown fields are ignored,
-// repeated fields follow the decoder's usual behavior, and omitted or null
-// text is empty. A missing, null, mistyped, or out-of-range branch is an error.
-//
-// An ordinary leaf's stdout is the final text. For a selected [Stop], the final
-// text comes from the selector's text field instead. Stop ends execution
-// normally, even with Loop enabled. There is no fixed run limit if the program
-// keeps choosing more work.
+// Returning [Stop] ends the tree normally with the current Result unchanged.
+// Unlike an ordinary leaf, Stop in the work tree also prevents a loop launch.
+// A Stop root invokes no process and yields an empty Result. Nodes are validated
+// only when reached; cycles continue until canceled or stopped. There is no
+// fixed run limit if the program keeps choosing more work.
 //
 // # Reference: improvement
 //
@@ -346,12 +387,10 @@
 // and existing run evidence, including Source, input, output, failure, and
 // invocation history.
 //
-// Every selected process receives that same complete stdin, not the preceding
-// selector's text. Routing follows the work-tree protocol: Selectors emit JSON,
-// leaves return stdout, and a selected Stop returns the selector's text.
-// Stop in the improvement tree ends only improvement. It never suppresses an
-// outer loop launch. Nodes are checked only when selected. Unselected invalid
-// branches are ignored; selected cycles continue until canceled or stopped.
+// Every continuation receives that same complete stdin, not the preceding
+// process's output. Next follows the same contract as in the work tree. A leaf
+// or returned Stop retains the current Result unchanged. Stop in the improvement
+// tree ends only improvement; it never suppresses an outer loop launch.
 //
 // Improvement stderr is displayed with a "godel: improvement: " prefix on each
 // line, for every invocation. Raw diagnostics still supply errors and any
@@ -366,7 +405,7 @@
 // been canceled. It is not retried. Run returns the work error, possibly joined
 // with an improvement error, without looping even when Loop is enabled.
 //
-// After successful work, an improvement-process error is recorded and diagnosed.
+// After successful work, an improvement execution error is recorded and diagnosed.
 // That error alone does not replace the work result or disable looping.
 // Persistence errors, context cancellation, lock errors, and launch errors can
 // still prevent a successful return or another run.

@@ -31,7 +31,6 @@ func TestImproveInvocation(t *testing.T) {
 				Input:            "original task with \"quotes\"",
 				Output:           "partial work result",
 				Failure:          "original work failure",
-				StopCondition:    "enough evidence",
 				Loop:             true,
 				Stopped:          true,
 				Sessions:         []string{"work-session", "prior-session"},
@@ -48,7 +47,7 @@ func TestImproveInvocation(t *testing.T) {
 				t.Fatalf("improvement invocations = %+v", result.Invocations)
 			}
 			m := result.Invocations[0]
-			if m.Error != "" || m.BranchIndex != nil || m.Elapsed <= 0 {
+			if m.Error != "" || m.Elapsed <= 0 {
 				t.Fatalf("improvement metadata = %+v", m)
 			}
 			if result.Result.Session != "" {
@@ -114,8 +113,8 @@ func TestImproveInvocation(t *testing.T) {
 
 func TestImproveInvocationFailure(t *testing.T) {
 	leaf := helperNode(t, "fail")
-	n := helperNode(t, "output", `{"branch":0,"text":"discard"}`, "yah-session: selector-session")
-	n.Branches = []Branch{{When: "attempt repair", Then: leaf}}
+	n := helperNode(t, "output", "attempt repair", "yah-session: transition-session")
+	n.Next = func(Result) (*Node, error) { return leaf, nil }
 	capture, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
@@ -131,9 +130,8 @@ func TestImproveInvocationFailure(t *testing.T) {
 	if len(result.Invocations) != 2 {
 		t.Fatalf("failed improvement invocations = %+v", result.Invocations)
 	}
-	selector := result.Invocations[0]
-	if selector.BranchIndex == nil || *selector.BranchIndex != 0 || selector.Error != "" {
-		t.Fatalf("failed improvement selector metadata = %+v", selector)
+	if m := result.Invocations[0]; m.Error != "" {
+		t.Fatalf("improvement transition metadata = %+v", m)
 	}
 	m := result.Invocations[1]
 	if m.Error != "exit status 23" {
@@ -142,7 +140,7 @@ func TestImproveInvocationFailure(t *testing.T) {
 	if result.Result != (Result{Text: "partial output\n", Session: "failed-session"}) {
 		t.Fatalf("failed invocation lost stdout/session: %+v", result)
 	}
-	if !reflect.DeepEqual(result.Sessions, []string{"selector-session", "failed-session"}) {
+	if !reflect.DeepEqual(result.Sessions, []string{"transition-session", "failed-session"}) {
 		t.Fatalf("failed improvement sessions = %q", result.Sessions)
 	}
 	for _, detail := range []string{"improvement attempt", "diagnostic detail\nyah-session: failed-session"} {
@@ -154,7 +152,7 @@ func TestImproveInvocationFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "godel: improvement: yah-session: selector-sessiongodel: improvement: diagnostic detail\ngodel: improvement: yah-session: failed-session\n"; string(diagnostics) != want {
+	if want := "godel: improvement: yah-session: transition-sessiongodel: improvement: diagnostic detail\ngodel: improvement: yah-session: failed-session\n"; string(diagnostics) != want {
 		t.Fatalf("improvement diagnostics = %q, want %q", diagnostics, want)
 	}
 }
@@ -174,13 +172,14 @@ func TestImproveTreeOriginalInput(t *testing.T) {
 	leaf := helperNode(t, "echo")
 	leaf.Directory = t.TempDir()
 	leaf.Env = append(leaf.Env, "GODEL_TEST_CWD="+leaf.Directory)
-	root := routerNode(t, input, `{"branch":0,"text":"not the leaf input"}`, "root",
-		Branch{When: "selected", Then: leaf})
+	root := helperNode(t, "respond", "not the leaf input", "root")
+	root.Env = append(root.Env, "GODEL_TEST_INPUT="+input)
+	root.Next = func(Result) (*Node, error) { return leaf, nil }
 	root.Env = append(root.Env, "GODEL_TEST_CWD="+info.Source)
 	beforeRoot, beforeLeaf := *root, *leaf
 	beforeRoot.Args = append([]string(nil), root.Args...)
 	beforeRoot.Env = append([]string(nil), root.Env...)
-	beforeRoot.Branches = append([]Branch(nil), root.Branches...)
+	beforeRoot.Next = nil
 	beforeLeaf.Args = append([]string(nil), leaf.Args...)
 	beforeLeaf.Env = append([]string(nil), leaf.Env...)
 	capture, err := os.CreateTemp(t.TempDir(), "stderr")
@@ -205,14 +204,14 @@ func TestImproveTreeOriginalInput(t *testing.T) {
 	if len(got.Invocations) != 2 {
 		t.Fatalf("improvement invocations = %+v", got.Invocations)
 	}
-	selector, final := got.Invocations[0], got.Invocations[1]
-	if selector.BranchIndex == nil || *selector.BranchIndex != 0 || selector.Error != "" {
-		t.Fatalf("improvement selector observation = %+v", selector)
+	for _, m := range got.Invocations {
+		if m.Error != "" {
+			t.Fatalf("improvement observation = %+v", m)
+		}
 	}
-	if final.BranchIndex != nil || final.Error != "" {
-		t.Fatalf("improvement leaf observation = %+v", final)
-	}
-	if !reflect.DeepEqual(*root, beforeRoot) || !reflect.DeepEqual(*leaf, beforeLeaf) {
+	afterRoot := *root
+	afterRoot.Next = nil
+	if root.Next == nil || !reflect.DeepEqual(afterRoot, beforeRoot) || !reflect.DeepEqual(*leaf, beforeLeaf) {
 		t.Fatal("improvement mutated caller nodes")
 	}
 	diagnostics, err := os.ReadFile(capture.Name())

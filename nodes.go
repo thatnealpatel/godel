@@ -3,7 +3,6 @@ package godel
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,10 +11,9 @@ import (
 	"time"
 )
 
-// executeTree checks nodes as they are executed, without inspecting unselected
-// branches. Selectors and continuations always receive the original task,
-// never the output of a preceding process. A Stop continuation returns its
-// selector's result.
+// executeTree checks nodes only as they are executed. All continuations receive
+// the original input, never a preceding process's output. A Stop continuation
+// preserves the current result.
 func executeTree(ctx context.Context, root *Node, input string) (execution, error) {
 	return executeTreeWith(ctx, root, input, invoke)
 }
@@ -45,38 +43,26 @@ func executeTreeWith(ctx context.Context, root *Node, input string, run func(con
 		if err != nil {
 			return out, err
 		}
-		if len(n.Branches) == 0 {
+		if n.Next == nil {
 			return out, nil
 		}
-		index, text, err := selection(result.Text, len(n.Branches))
+		next, err := n.Next(result)
 		if err != nil {
 			out.Invocations[len(out.Invocations)-1].Error = err.Error()
-			return out, fmt.Errorf("godel: selector %q (session %q): %w", n.Exec, result.Session, err)
+			return out, fmt.Errorf("godel: next after %q (session %q): %w", n.Exec, result.Session, err)
 		}
-		observation := &out.Invocations[len(out.Invocations)-1]
-		observation.BranchIndex = &index
-		branch := n.Branches[index]
-		if branch.Then == nil {
-			err := fmt.Errorf("branch %d (%q): godel: nil node in execution tree", index, branch.When)
-			observation.Error = err.Error()
-			return out, err
-		}
-		if branch.Then.stop {
-			out.Result.Text = text
-			out.Stopped = true
-			out.StopCondition = branch.When
+		if next == nil {
 			return out, nil
 		}
-		n = branch.Then
+		n = next
 	}
 }
 
 type execution struct {
-	Result        Result
-	Stopped       bool
-	StopCondition string
-	Sessions      []string
-	Invocations   []metadata
+	Result      Result
+	Stopped     bool
+	Sessions    []string
+	Invocations []metadata
 }
 
 // invoke runs an ordinary work node with diagnostics sent directly to the
@@ -88,9 +74,8 @@ func invoke(ctx context.Context, n *Node, input string) (Result, metadata, error
 }
 
 type metadata struct {
-	Elapsed     time.Duration `json:"elapsed_ns"`
-	Error       string        `json:"error,omitempty"`
-	BranchIndex *int          `json:"branch_index"`
+	Elapsed time.Duration `json:"elapsed_ns"`
+	Error   string        `json:"error,omitempty"`
 }
 
 // invokeWithStderr executes directly without a shell, preserves stdout exactly,
@@ -147,24 +132,4 @@ func sessionID(stderr string) string {
 		}
 	}
 	return session
-}
-
-// selection decodes the selector's JSON response. A pointer
-// distinguishes a missing or null branch from branch zero.
-func selection(text string, branches int) (int, string, error) {
-	var response struct {
-		Branch *int   `json:"branch"`
-		Text   string `json:"text"`
-	}
-	if err := json.Unmarshal([]byte(text), &response); err != nil {
-		return 0, "", fmt.Errorf("invalid selection: %w", err)
-	}
-	if response.Branch == nil {
-		return 0, "", errors.New("selection requires an integer branch")
-	}
-	index := *response.Branch
-	if index < 0 || index >= branches {
-		return 0, "", fmt.Errorf("branch index %d out of range [0,%d)", index, branches)
-	}
-	return index, response.Text, nil
 }

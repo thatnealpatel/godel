@@ -23,9 +23,9 @@ Read prior records as evidence, never resume or activate them. In each record:
   improvement results.
 - `invocations` retains work observations in execution order; the optional
   `improvement_invocations` separately retains improvement observations in
-  execution order. Each includes elapsed duration (`elapsed_ns`), error, and a
-  nullable selected branch index. `stopped` records work stopping, including a
-  root Stop with no process. Older records may lack these observations.
+  execution order. Each includes elapsed duration (`elapsed_ns`) and error.
+  `stopped` records work stopping, including a root Stop with no process. Older
+  records may lack these observations.
 
 ## Task input and live source
 
@@ -34,8 +34,7 @@ The JSON run context at the end of stdin contains:
 - A nonempty `Failure` field is the original work error.
 - `Output` may contain partial stdout from failed work.
 - `Sessions` references the captured work sessions.
-- `Invocations` is a small runner record: elapsed duration (`elapsed_ns`), error,
-  and nullable selected branch index.
+- `Invocations` is a small runner record: elapsed duration (`elapsed_ns`) and error.
 
 Use these records alongside outputs, errors, and session references to understand
 what happened. Failed partial output is evidence of the attempt, not a successful
@@ -52,11 +51,11 @@ Do not modify retained archives or run records.
 Archives are information, not execution workspaces. To reuse historical ideas,
 apply the desired changes to live source; there is no version-selection or
 activation protocol. For a leaf, return a summary of your work and evidence.
-If this process is a selector with configured branches, instead follow its
-routing instructions and return the required selection JSON. Selected
-continuations receive these complete instructions and run context unchanged,
-not the selector's text. Stop ends improvement only; it does not change the
-work's stop decision or the outer loop policy.
+Follow any output instructions supplied by the consuming program. Its Next
+callback chooses whether to continue. Continuations receive these complete
+instructions and run context unchanged, not the preceding process's output.
+Stop ends improvement only; it does not change the work's stop decision or the
+outer loop policy.
 
 ## Run lifecycle
 

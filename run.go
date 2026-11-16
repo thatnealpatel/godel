@@ -76,7 +76,6 @@ func (g *Godel) run(ctx context.Context, params *Params) (result *Result, retErr
 	r.Invocations = work.Invocations
 	r.Stopped = work.Stopped
 	r.FinalResponse = work.Result.Text
-	r.StopCondition = work.StopCondition
 	var workErr error
 	if err != nil {
 		workErr = fmt.Errorf("godel: execute: %w", err)
@@ -103,7 +102,6 @@ func (g *Godel) run(ctx context.Context, params *Params) (result *Result, retErr
 			Input:            input,
 			Output:           work.Result.Text,
 			Failure:          r.Failure,
-			StopCondition:    work.StopCondition,
 			Loop:             params.Loop,
 			Stopped:          work.Stopped,
 			Sessions:         work.Sessions,
