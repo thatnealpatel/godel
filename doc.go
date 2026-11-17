@@ -3,6 +3,11 @@
 // revise its live source and start a fresh run with those changes.
 // Self-improvement and looping are optional.
 //
+// This package aims to describe, not prescribe. Callers are free to build
+// whatever abstractions they want. Examples below are illustrative only
+// and do not begin to scratch the surface of the types of `godel` programs
+// that can be written.
+//
 // A harness is just a subprocess. Set [Node.Exec] to "claude", "pi", "codex",
 // or another executable, and Args to its noninteractive CLI arguments.
 // `godel` sends the task on stdin and takes the result from stdout. Choose the
@@ -16,7 +21,7 @@
 // another `godel` program to work on a smaller goal. You choose the goal, what
 // work to try, and when the program should stop. The examples below develop a
 // textually grounded analysis of Wittgenstein's private-language argument,
-// consider objections, and revise the interpretation. Adapt them to your work.
+// consider objections, and revise the interpretation.
 //
 // # A first program
 //
@@ -437,4 +442,10 @@
 // Callers should cancel the context on interrupt and termination signals,
 // as the examples do. Killing the runner with SIGKILL cannot trigger
 // cancellation and is not guaranteed to clean up its scopes.
+//
+// # Security
+//
+// This package provides absolutely no security properties: Callers are
+// expected bring their own solution for running untrusted agents using
+// trusted harnesses.
 package godel

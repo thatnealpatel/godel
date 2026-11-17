@@ -1,4 +1,3 @@
-`godel` aims to be the next abstraction
-beyond the agentic coding harness.
-
-This is n=1 software: Feel free to fork.
+patel.codes/godel aims to be the next abstraction
+beyond the agentic coding harness. See the package
+documentation: https://pkg.go.dev/patel.codes/godel
