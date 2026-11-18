@@ -30,12 +30,12 @@ func improve(ctx context.Context, n *Node, info improvementContext) (execution, 
 }
 
 type improvementContext struct {
-	Goal, ProgramID, Source, ProgramDirectory, Version, RunRecord string
-	Directory, Input, Output                                      string
-	Failure                                                       string
-	Loop, Stopped                                                 bool
-	Sessions                                                      []string
-	Invocations                                                   []metadata
+	Goal, ProgramID, Source, ProgramDirectory, RunRecord string
+	Directory, Input, Output                             string
+	Failure                                              string
+	Loop, Stopped                                        bool
+	Sessions                                             []string
+	Invocations                                          []metadata
 }
 
 var (

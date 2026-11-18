@@ -50,11 +50,7 @@ func (g *Godel) run(ctx context.Context, params *Params) (result *Result, retErr
 			return nil, err
 		}
 	}
-	version, err := archive(ctx, p)
-	if err != nil {
-		return nil, fmt.Errorf("godel: archive source: %w", err)
-	}
-	r, err := newRunRecord(p, version, input, cwd)
+	r, err := newRunRecord(p, input, cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +92,6 @@ func (g *Godel) run(ctx context.Context, params *Params) (result *Result, retErr
 			ProgramID:        p.ID,
 			Source:           p.Source,
 			ProgramDirectory: p.Dir,
-			Version:          version,
 			RunRecord:        r.path(p),
 			Directory:        cwd,
 			Input:            input,

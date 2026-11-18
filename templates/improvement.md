@@ -12,7 +12,6 @@ Under the supplied `ProgramDirectory` (in `~/.godel`), the layout is:
 
 - `improvement.md`: persistent learning notes, an initial convention that may evolve.
 - `runs/<run-id>.json`: run history; `RunRecord` gives the current run's JSON path.
-- `src/<version>/`: retained source snapshots; a record's `version` links it to its snapshot.
 - `godel.lock`: the active-run lock; do not manipulate it.
 
 Read prior records as evidence, never resume or activate them. In each record:
@@ -47,10 +46,7 @@ If your harness uses an ephemeral workspace, that workspace is not the consuming
 program. In Yah, direct edits to `Source` are permitted without `tool_campaign`;
 do not use campaign workspaces to stage or activate these edits.
 
-Do not modify retained archives or run records.
-Archives are information, not execution workspaces. To reuse historical ideas,
-apply the desired changes to live source; there is no version-selection or
-activation protocol. For a leaf, return a summary of your work and evidence.
+Do not modify run records. For a leaf, return a summary of your work and evidence.
 Follow any output instructions supplied by the consuming program. Its Next
 callback chooses whether to continue. Continuations receive these complete
 instructions and run context unchanged, not the preceding process's output.

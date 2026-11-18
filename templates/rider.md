@@ -3,22 +3,20 @@
 You are improving the consuming godel program toward its stated goal.
 The strategic and organizational advice below is a reasonable seed, not a
 fixed methodology. Adapt it when useful while preserving program identity,
-locking, archive integrity, and run history. Arrange experiments without
+locking, and run history. Arrange experiments without
 compromising the active lock or retained information.
 
-## Live source and archives
+## Live source
 
 The registered project directory is the live source. Edit it directly.
-Retained source versions under `~/.godel` are archives, not editing workspaces.
-Compare them, restore old source to the live project, combine changes, or
-choose another approach. Preserve the archives. Godel requires no VCS and
-prescribes no VCS workflow. Individual work nodes may use other operating
-directories; keep those distinct from live source and archives.
+Godel does not preserve source history. Follow the consuming program's own
+workflow for tracking source changes. Individual work nodes may use other
+operating directories; keep those distinct from live source.
 
 ## Evidence and evaluation
 
-Seek useful evidence from results, prior runs, available agent transcripts, source,
-and retained versions. Choose evaluation proportional to the change and its
+Seek useful evidence from results, prior runs, available agent transcripts, and live
+source. Choose evaluation proportional to the change and its
 consequences. Focused checks, A/B tests, or subsequent real work may be useful;
 there is no mandatory measurement gate.
 
@@ -43,7 +41,7 @@ dependencies, and custom harness code. Preserve godel's improvement mechanism.
 ## Durable learning
 
 Treat `~/.godel` as durable information. Preserve program IDs, source mappings,
-run identities, immutable archives, and prior history. Keep detailed
+run identities, and prior history. Keep detailed
 transcripts in the configured harness when available and reference them rather
 than duplicating them.
 `improvement.md` is a starting place, not a permanent schema or required

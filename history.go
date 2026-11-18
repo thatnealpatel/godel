@@ -9,14 +9,13 @@ import (
 	"uuid"
 )
 
-func newRunRecord(p *program, version, input, directory string) (*runRecord, error) {
+func newRunRecord(p *program, input, directory string) (*runRecord, error) {
 	if err := os.MkdirAll(filepath.Join(p.Dir, "runs"), 0700); err != nil {
 		return nil, err
 	}
 	c := &runRecord{
 		ID:        uuid.NewV7().String(),
 		ProgramID: p.ID,
-		Version:   version,
 		Input:     input,
 		Directory: directory,
 		Status:    "running",
@@ -68,7 +67,6 @@ func latestFinalResponse(p *program) (string, error) {
 type runRecord struct {
 	ID                     string     `json:"id"`
 	ProgramID              string     `json:"program_id"`
-	Version                string     `json:"version"`
 	Input                  string     `json:"input"`
 	Directory              string     `json:"directory"`
 	Status                 string     `json:"status"`

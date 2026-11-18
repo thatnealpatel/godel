@@ -1,20 +1,16 @@
 package godel
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
-	"time"
 )
 
 func TestStorageRegistration(t *testing.T) {
@@ -87,33 +83,6 @@ func storageTestHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	t.Setenv("GOTOOLCHAIN", "local")
-	// Go's telemetry sidecar can outlive the command and recreate files while
-	// TempDir removes HOME. Disable it within this fixture's private config.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if output, err := exec.CommandContext(ctx, "go", "telemetry", "off").CombinedOutput(); err != nil {
-		t.Fatalf("disable fixture telemetry: %v\n%s", err, output)
-	}
-	// Published archives are deliberately
-	// read-only. Restore directory write
-	// permissions only for the test
-	// framework's eventual temporary-tree
-	// cleanup.
-	t.Cleanup(func() {
-		if err := filepath.WalkDir(home, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() {
-				return os.Chmod(path, 0700)
-			}
-			return nil
-		}); err != nil {
-			t.Errorf("prepare test cleanup: %v", err)
-		}
-	})
 	return home
 }
 
@@ -123,21 +92,6 @@ func storageTestSource(t *testing.T, home string) string {
 	if err := os.Mkdir(source, 0755); err != nil {
 		t.Fatal(err)
 	}
-	storageWriteFile(t, filepath.Join(source, "go.mod"), "module example.test/program\n\ngo 1.27.3\n", 0644)
-	storageWriteFile(t, filepath.Join(source, "main.go"), `package main
-import (
-    "embed"
-    "fmt"
-)
-//go:embed message.txt
-var inputs embed.FS
-func main() {
-    message, err := inputs.ReadFile("message.txt")
-    if err != nil { panic(err) }
-    fmt.Print(string(message))
-}
-`, 0644)
-	storageWriteFile(t, filepath.Join(source, "message.txt"), "original live input\n", 0644)
 	return source
 }
 
@@ -279,6 +233,7 @@ func TestStorageManifestErrors(t *testing.T) {
 	if _, err := registerProgram(filepath.Join(home, "absent")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing source error = %v", err)
 	}
+	storageWriteFile(t, filepath.Join(source, "main.go"), "package main", 0600)
 	if _, err := registerProgram(filepath.Join(source, "main.go")); err == nil {
 		t.Fatal("registered a file instead of a source directory")
 	}
@@ -372,236 +327,6 @@ func TestStorageAtomicJSON(t *testing.T) {
 	}
 	if len(entries) != 2 {
 		t.Fatalf("temporary JSON files leaked: %v", entries)
-	}
-}
-
-func TestStorageArchiveRetainsLiveInputs(t *testing.T) {
-	home := storageTestHome(t)
-	source := storageTestSource(t, home)
-	storageWriteFile(t, filepath.Join(source, "script.sh"), "#!/bin/sh\necho original\n", 0751)
-	storageWriteFile(t, filepath.Join(source, "godel"), "ordinary source file named godel", 0644)
-	for _, name := range []string{".git", ".jj"} {
-		if err := os.Mkdir(filepath.Join(source, name), 0700); err != nil {
-			t.Fatal(err)
-		}
-		storageWriteFile(t, filepath.Join(source, name, "metadata"), "not a build input", 0600)
-	}
-	external := filepath.Join(home, "external.txt")
-	storageWriteFile(t, external, "external original", 0640)
-	if err := os.Symlink(external, filepath.Join(source, "linked.txt")); err != nil {
-		t.Fatal(err)
-	}
-	externalDir := filepath.Join(home, "external-directory")
-	if err := os.Mkdir(externalDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	storageWriteFile(t, filepath.Join(externalDir, "input.txt"), "directory original", 0644)
-	if err := os.Symlink(externalDir, filepath.Join(source, "linked-dir")); err != nil {
-		t.Fatal(err)
-	}
-	p, err := registerProgram(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	id, err := archive(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join(p.Dir, "src", id)
-	if !regexp.MustCompile(`^[A-Za-z]{7}$`).MatchString(id) {
-		t.Fatalf("invalid archive ID %q", id)
-	}
-	if err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0222 != 0 {
-			t.Errorf("mutable archive entry %q: %s", path, info.Mode())
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{".git", ".jj"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("metadata %q retained: %v", name, err)
-		}
-	}
-	info, err := os.Stat(filepath.Join(dir, "script.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := info.Mode().Perm(); got != 0551 {
-		t.Fatalf("script permissions = %o; want 551", got)
-	}
-	if err := os.RemoveAll(source); err != nil {
-		t.Fatal(err)
-	}
-	storageWriteFile(t, external, "external changed", 0640)
-	storageWriteFile(t, filepath.Join(externalDir, "input.txt"), "directory changed", 0644)
-	for name, want := range map[string]string{
-		"message.txt":          "original live input\n",
-		"linked.txt":           "external original",
-		"linked-dir/input.txt": "directory original",
-		"script.sh":            "#!/bin/sh\necho original\n",
-		"godel":                "ordinary source file named godel",
-	} {
-		if got := storageReadFile(t, filepath.Join(dir, name)); got != want {
-			t.Errorf("retained %s = %q; want %q", name, got, want)
-		}
-	}
-
-	// A subsequent version comes from
-	// current live source, not the previous
-	// archive.
-	source = storageTestSource(t, home)
-	storageWriteFile(t, filepath.Join(source, "message.txt"), "new live input\n", 0644)
-	next, err := archive(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if next == id {
-		t.Fatal("archive reused an existing version ID")
-	}
-	if got := storageReadFile(t, filepath.Join(p.Dir, "src", next, "message.txt")); got != "new live input\n" {
-		t.Fatalf("new version ignored live edits: %q", got)
-	}
-	// Archives retain information, including a failed experiment; they do not
-	// compile or activate source.
-	storageWriteFile(t, filepath.Join(source, "main.go"), "this is not Go", 0644)
-	invalid, err := archive(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := storageReadFile(t, filepath.Join(p.Dir, "src", invalid, "main.go")); got != "this is not Go" {
-		t.Fatalf("lost failed experiment: %q", got)
-	}
-}
-
-func TestStorageArchiveExcludesStorage(t *testing.T) {
-	home := storageTestHome(t)
-	// A source containing ~/.godel must not
-	// recursively archive its output.
-	source := storageTestSource(t, home)
-	for _, name := range []string{"go.mod", "main.go", "message.txt"} {
-		if err := os.Rename(filepath.Join(source, name), filepath.Join(home, name)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	p, err := registerProgram(home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	id, err := archive(ctx, p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "src", id, ".godel")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("archive contains storage: %v", err)
-	}
-}
-
-func TestStorageArchiveErrors(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		make func(string) error
-		want string
-	}{
-		{
-			"dangling link",
-			func(source string) error {
-				return os.Symlink("missing", filepath.Join(source, "link"))
-			},
-			"resolve input",
-		},
-		{
-			"directory cycle",
-			func(source string) error {
-				return os.Symlink(source, filepath.Join(source, "cycle"))
-			},
-			"cycle",
-		},
-		{
-			"special file",
-			func(source string) error {
-				return syscall.Mkfifo(filepath.Join(source, "fifo"), 0600)
-			},
-			"unsupported source file",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			home := storageTestHome(t)
-			source := storageTestSource(t, home)
-			p, err := registerProgram(source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := test.make(source); err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if _, err := archive(ctx, p); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("archive error = %v; want %q", err, test.want)
-			}
-			entries, err := os.ReadDir(filepath.Join(p.Dir, "src"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(entries) != 0 {
-				t.Fatalf("unpublished archive leaked: %v", entries)
-			}
-		})
-	}
-	home := storageTestHome(t)
-	source := storageTestSource(t, home)
-	p, err := registerProgram(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err := archive(ctx, p); !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled archive error = %v", err)
-	}
-	if _, err := archive(context.Background(), nil); err == nil {
-		t.Fatal("archived a nil program")
-	}
-	if err := os.Symlink(filepath.Dir(p.Dir), filepath.Join(source, "storage-link")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := archive(context.Background(), p); err == nil || !strings.Contains(err.Error(), "archive storage") {
-		t.Fatalf("link into storage error = %v", err)
-	}
-}
-
-func TestStorageArchiveNeedsNoBuildContext(t *testing.T) {
-	home := storageTestHome(t)
-	source := filepath.Join(home, "source")
-	if err := os.Mkdir(source, 0700); err != nil {
-		t.Fatal(err)
-	}
-	storageWriteFile(t, filepath.Join(source, "notes.txt"), "source information", 0600)
-	t.Setenv("GOWORK", filepath.Join(home, "absent.work"))
-	t.Setenv("PATH", "")
-	p, err := registerProgram(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := archive(context.Background(), p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := storageReadFile(t, filepath.Join(p.Dir, "src", id, "notes.txt")); got != "source information" {
-		t.Fatalf("retained notes = %q", got)
 	}
 }
 

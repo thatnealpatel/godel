@@ -279,16 +279,12 @@
 // The goal passed to New is improvement context. Work and decision nodes need
 // their instructions in Args; the goal is not added to their prompts.
 //
-// Each registered program keeps run history, immutable source archives, and
-// learning materials under $HOME/.godel. Learning materials start as
-// improvement.md and can change form as useful knowledge accumulates. A run
-// record links the input, output, failure, session references, and invocation
-// observations to the source version used.
-//
-// Prior attempts, old implementations, and notes let you compare, combine,
-// revisit, or abandon ideas. Archives are not execution workspaces. Apply
-// historical source to the live project to use it. History does not resume a
-// process or restore a run's identity.
+// Each registered program keeps run records and learning materials under
+// $HOME/.godel. Learning materials start as improvement.md and can change form
+// as useful knowledge accumulates. Run records describe the work, not the
+// source that produced it. `godel` does not copy or version the live source.
+// If you want to compare or undo edits, preserve the source before the run
+// using your own version control or backup workflow.
 //
 // Nodes can include findings, checks, resource reports, or artifact references
 // in their output when useful to later work or improvement. Choose a form that
@@ -380,7 +376,7 @@
 // uses Codex. These are process configurations, not backend adapters.
 //
 // Each improvement node's Directory controls only that process's cwd. It does
-// not change source identity, archives, or the improvement target. If omitted,
+// not change source identity or the improvement target. If omitted,
 // Directory defaults to the registered live source for that node. The caller's
 // nodes are not modified. The generated context always identifies the
 // registered live Source separately from those operating directories.

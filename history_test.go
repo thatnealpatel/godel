@@ -17,7 +17,7 @@ func TestRunRecordHistory(t *testing.T) {
 		Dir: t.TempDir(),
 	}
 	cwd := t.TempDir()
-	r, err := newRunRecord(p, "Version", "original\n", cwd)
+	r, err := newRunRecord(p, "original\n", cwd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,15 +41,15 @@ func TestRunRecordHistory(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.ID != r.ID || saved.Status != "completed" || saved.Input != "original\n" || saved.FinalResponse != "output\n" || saved.Directory != cwd || saved.Version != "Version" || saved.ProgramID != p.ID {
+	if saved.ID != r.ID || saved.Status != "completed" || saved.Input != "original\n" || saved.FinalResponse != "output\n" || saved.Directory != cwd || saved.ProgramID != p.ID {
 		t.Fatalf("lost history: %+v", saved)
 	}
 	if !reflect.DeepEqual(saved.Invocations, r.Invocations) || !reflect.DeepEqual(saved.ImprovementInvocations, r.ImprovementInvocations) {
 		t.Fatalf("lost work/auxiliary trace: %+v", saved)
 	}
-	// Old branch fields are ordinary unknown JSON fields. They must not prevent
-	// the saved response from supplying the next task.
-	legacy := `{"final_response":"old answer", "stop_condition":"finished", "invocations":[{"elapsed_ns":1,"branch_index":0}]}`
+	// Old version and branch fields are ordinary unknown JSON fields. They must
+	// not prevent the saved response from supplying the next task.
+	legacy := `{"final_response":"old answer", "version":"OldVers", "stop_condition":"finished", "invocations":[{"elapsed_ns":1,"branch_index":0}]}`
 	if err := os.WriteFile(r.path(p), []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -60,11 +60,11 @@ func TestRunRecordHistory(t *testing.T) {
 	if err := os.WriteFile(r.path(p), []byte("not JSON"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fresh, err := newRunRecord(p, "NewVers", "new task", cwd)
+	fresh, err := newRunRecord(p, "new task", cwd)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fresh.ID == r.ID || fresh.Input != "new task" || fresh.Version != "NewVers" {
+	if fresh.ID == r.ID || fresh.Input != "new task" {
 		t.Fatalf("fresh run inherited history: %+v", fresh)
 	}
 }
@@ -85,7 +85,7 @@ func TestRunRecordIDs(t *testing.T) {
 	seen := make(map[string]bool)
 	cwd := t.TempDir()
 	for range 5 {
-		c, err := newRunRecord(p, "Incumbe", "task", cwd)
+		c, err := newRunRecord(p, "task", cwd)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +110,7 @@ func TestRunRecordIDs(t *testing.T) {
 		if err := json.Unmarshal(data, &saved); err != nil {
 			t.Fatal(err)
 		}
-		if saved.ID != id || saved.ProgramID != p.ID || saved.Version != "Incumbe" || saved.Input != "task" || saved.Directory != cwd || saved.Status != "running" {
+		if saved.ID != id || saved.ProgramID != p.ID || saved.Input != "task" || saved.Directory != cwd || saved.Status != "running" {
 			t.Fatalf("lost history: %+v", saved)
 		}
 	}
