@@ -3,16 +3,16 @@
 // revise its live source and start a fresh run with those changes.
 // Self-improvement and looping are optional.
 //
-// This package aims to describe, not prescribe. Callers are free to build
-// whatever abstractions they want. Examples below are illustrative only
-// and do not begin to scratch the surface of the types of `godel` programs
-// that can be written.
+// A work node can run an executable you write. It reads the task on stdin
+// and writes its result on stdout. It can run a loop of its own; the caller
+// still gets one result. A command can report a decision on stdout and exit
+// successfully for [Node.Next] to interpret it. A nonzero exit fails the
+// invocation; Next is not called.
 //
-// A harness is just a subprocess. Set [Node.Exec] to "claude", "pi", "codex",
-// or another executable, and Args to its noninteractive CLI arguments.
-// `godel` sends the task on stdin and takes the result from stdout. Choose the
-// harness output mode your program wants to interpret. There is no backend
-// adapter to write; the examples use text output.
+// Set [Node.Exec] to the executable and Args to its arguments. For an agent
+// harness such as "claude", "pi", or "codex", choose the noninteractive
+// output mode your program wants to interpret. There is no backend adapter
+// to write; the examples use text output.
 //
 // Put work instructions in Args. The goal passed to [New] gives context to
 // self-improvement; it is not automatically sent to work nodes.
@@ -23,6 +23,9 @@
 // textually grounded analysis of Wittgenstein's private-language argument,
 // consider objections, and revise the interpretation.
 //
+// Running nodes requires Linux, systemd-run, systemctl, and a working user
+// systemd manager.
+//
 // # A first program
 //
 // This program asks Claude Code to analyze Wittgenstein's private-language
@@ -32,8 +35,7 @@
 // Put the program in main.go in its own module. Create the module with
 // go mod init example.com/wittgenstein, then add the dependency with
 // go get patel.codes/godel@latest. Run it from that module's live-source directory
-// with Go and an authenticated claude on PATH. Node execution also requires
-// systemd-run, systemctl, and a working user systemd manager.
+// with Go and an authenticated claude on PATH.
 //
 //	package main
 //
@@ -95,9 +97,10 @@
 // question. It does not settle the philosophical dispute.
 //
 // Within a run, the assessment and its continuation get the same original
-// input. The assessment's output is not passed on as a critique or plan, so the
-// answering node has its own revision instructions. Across loop launches, the
-// example's handoff keeps the original question alongside the candidate. Adapt
+// input. For revision, Next also saves the assessment to assessment.json in
+// the example module, replacing the previous critique. The reviser reads it
+// alongside the task on stdin. Across loop launches, the handoff keeps the
+// original question alongside the candidate. Adapt
 // that output format to carry the context your program needs. The final result
 // is the complete decision JSON, including the question and answer, unchanged.
 //
@@ -122,6 +125,7 @@
 //			Action   string `json:"action"`
 //			Question string `json:"question"`
 //			Answer   string `json:"answer"`
+//			Critique string `json:"critique"`
 //		}
 //		if err := json.Unmarshal([]byte(text), &decision); err != nil {
 //			return "", fmt.Errorf("invalid Wittgenstein decision: %w", err)
@@ -131,6 +135,9 @@
 //		}
 //		switch decision.Action {
 //		case "revise":
+//			if strings.TrimSpace(decision.Critique) == "" {
+//				return "", fmt.Errorf("revise decision requires a critique")
+//			}
 //			return decision.Action, nil
 //		case "done":
 //			if strings.TrimSpace(decision.Answer) == "" {
@@ -156,8 +163,8 @@
 //	sections of Philosophical Investigations, distinguish textual evidence from
 //	interpretation, consider a serious objection, and acknowledge uncertainty.
 //	Do not invent quotations.
-//	Independently identify any correction needed; you do not receive the assessment's
-//	critique. Return only a JSON handoff with "question" (the ORIGINAL QUESTION
+//	Read assessment.json in the current directory and address its critique.
+//	Return only a JSON handoff with "question" (the ORIGINAL QUESTION
 //	verbatim, preserving all qualifications and constraints) and "answer" (the
 //	CANDIDATE ANSWER).`,
 //			},
@@ -172,10 +179,10 @@
 //	section references to Philosophical Investigations, conflates textual evidence
 //	with interpretation, or neglects a serious objection. Choose "done" when it
 //	addresses the question with a supported interpretation, considers the objection,
-//	and acknowledges remaining uncertainty. You only assess: Your critique is not
-//	passed to the answering node.
+//	and acknowledges remaining uncertainty. For revision, explain the gap the next
+//	reader should address.
 //	Return only one JSON object, with no Markdown fences or other text:
-//	{"action":"revise","question":"the original question verbatim","answer":"the candidate, if any"}
+//	{"action":"revise","question":"the original question verbatim","critique":"what needs revision"}
 //	or {"action":"done","question":"the original question verbatim","answer":"the final analysis"}.
 //	Preserve all original qualifications and constraints.`,
 //			},
@@ -185,6 +192,9 @@
 //					return nil, err
 //				}
 //				if action == "revise" {
+//					if err := os.WriteFile("assessment.json", []byte(result.Text), 0600); err != nil {
+//						return nil, err
+//					}
 //					return revise, nil
 //				}
 //				return godel.Stop(), nil
@@ -225,9 +235,12 @@
 // revision node for gaps, or [Stop] for a supported analysis. These criteria
 // and this JSON schema belong to the example, not to `godel`.
 //
-// The revision node receives the original input, not the assessment's reasoning.
-// It has its own instructions for finding and addressing gaps. At Stop, the
-// assessment's entire Result is retained, including the JSON text and session.
+// To choose directly from the task, use a root such as
+// &godel.Node{Exec: "cat", Next: choose}. Then choose receives the resolved
+// task in Result.Text, even when the input came from history.
+//
+// At Stop, the assessment's entire Result is retained, including its JSON
+// text and session.
 // Next does not extract an answer or rewrite the result. Other programs can
 // interpret plain text, structured output, or any other process response.
 //
@@ -257,6 +270,14 @@
 // its analysis to the parent. A looping child keeps control until it returns
 // or is stopped. Compose programs through subprocess nodes, not repeated
 // Run calls in one process.
+//
+// A child can do work concurrently. For example, its harness can ask two
+// subagents to review the same draft in parallel and return one assessment
+// on stdout. The parent need not know how the review was divided. If it needs
+// each reviewer's findings, it can ask for them in the child's output. The
+// parent records one invocation and at most one session marker for that node.
+// Context cancellation targets the node's systemd scope. A second Run for
+// the same canonical source directory panics if the program lock is held.
 //
 // The parent receives the child's stdout. Put incidental diagnostics on stderr.
 // Use stdout for the result and any context the parent needs. Across loop
@@ -290,7 +311,10 @@
 // in their output when useful to later work or improvement. Choose a form that
 // fits the program. There is no required evidence schema or evaluation gate.
 // These reports come from the nodes. `godel` itself records invocation timing,
-// errors, and captured session IDs.
+// errors, and captured session IDs. History keeps the final work response, not
+// every intermediate stdout. To make an intermediate result available for
+// later improvement, save it durably and name its path in the improver's
+// arguments or in the final work output.
 //
 // A source change is an experiment, not proof of improvement. Use results and
 // retained experience to decide what to keep, revise, or try next.
@@ -406,6 +430,11 @@
 // been canceled. It is not retried. Run returns the work error, possibly joined
 // with an improvement error, without looping even when Loop is enabled.
 //
+// Restart policy belongs to the caller or an external supervisor. Starting
+// again without explicit input creates a fresh run from the most recent
+// saved nonblank response, possibly partial output from failed work. It does
+// not resume a stopped process or automatically retry the failed task.
+//
 // After successful work, an improvement execution error is recorded and diagnosed.
 // That error alone does not replace the work result or disable looping.
 // Persistence errors, context cancellation, lock errors, and launch errors can
@@ -442,6 +471,6 @@
 // # Security
 //
 // This package provides absolutely no security properties: Callers are
-// expected bring their own solution for running untrusted agents using
+// expected to bring their own solution for running untrusted agents using
 // trusted harnesses.
 package godel
