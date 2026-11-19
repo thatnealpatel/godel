@@ -47,14 +47,24 @@ func TestRunRecordHistory(t *testing.T) {
 	if !reflect.DeepEqual(saved.Invocations, r.Invocations) || !reflect.DeepEqual(saved.ImprovementInvocations, r.ImprovementInvocations) {
 		t.Fatalf("lost work/auxiliary trace: %+v", saved)
 	}
-	// Old version and branch fields are ordinary unknown JSON fields. They must
-	// not prevent the saved response from supplying the next task.
-	legacy := `{"final_response":"old answer", "version":"OldVers", "stop_condition":"finished", "invocations":[{"elapsed_ns":1,"branch_index":0}]}`
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["sessions"]; ok {
+		t.Error("new history contains a sessions field")
+	}
+	// Legacy fields must not prevent a saved response from supplying the next
+	// task, and fallback must not rewrite the record.
+	legacy := `{"final_response":"old answer", "sessions":["old-session"], "version":"OldVers", "stop_condition":"finished", "invocations":[{"elapsed_ns":1,"branch_index":0}]}`
 	if err := os.WriteFile(r.path(p), []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if response, err := latestFinalResponse(p); err != nil || response != "old answer" {
 		t.Fatalf("old history response = %q, %v", response, err)
+	}
+	if data, err := os.ReadFile(r.path(p)); err != nil || string(data) != legacy {
+		t.Fatalf("fallback changed legacy history: %q, %v", data, err)
 	}
 	// Creating a fresh record with explicit input does not read old history.
 	if err := os.WriteFile(r.path(p), []byte("not JSON"), 0600); err != nil {

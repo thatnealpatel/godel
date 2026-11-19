@@ -330,32 +330,31 @@ func TestStorageAtomicJSON(t *testing.T) {
 	}
 }
 
-func TestInitialLearningMaterialsCanEvolve(t *testing.T) {
+func TestRegistrationLeavesNotesAlone(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	source := t.TempDir()
 	p, err := registerProgram(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(p.Dir, "improvement.md")
-	initial, err := os.ReadFile(path)
+	entries, err := os.ReadDir(p.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(initial), source) {
-		t.Fatalf("initial learning materials omit live source: %s", initial)
+	if len(entries) != 0 {
+		t.Fatalf("registration seeded files: %v", entries)
 	}
-	if err := os.Rename(path, filepath.Join(p.Dir, "research-notes.md")); err != nil {
-		t.Fatal(err)
-	}
+	path := filepath.Join(p.Dir, "improvement.md")
+	const notes = "Existing notes\n"
+	storageWriteFile(t, path, notes, 0600)
 	again, err := registerProgram(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.ID != p.ID {
-		t.Fatalf("registration changed identity: %s != %s", again.ID, p.ID)
+	if *again != *p {
+		t.Fatalf("registration changed: %+v != %+v", again, p)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("registration recreated removed learning entry point: %v", err)
+	if got := storageReadFile(t, path); got != notes {
+		t.Fatalf("registration changed existing notes: %q", got)
 	}
 }

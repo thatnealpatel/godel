@@ -63,14 +63,12 @@ type Node struct {
 	stop bool
 }
 
-// Result carries process output and
-// lightweight execution metadata. Next
+// Result carries process stdout. Next
 // receives a successful invocation's
 // Result. Run returns the final work
 // Result only on a nil error.
 type Result struct {
-	Text    string
-	Session string
+	Text string
 }
 
 // Stop constructs a terminal node that ends

@@ -53,9 +53,6 @@ func TestInvokeProcessContract(t *testing.T) {
 			t.Errorf("env[%q] = %q (present %v), want %q", key, value, exists, want)
 		}
 	}
-	if result.Session != "" {
-		t.Fatalf("unexpected session: %q", result.Session)
-	}
 	if m.Elapsed <= 0 || m.Elapsed > after.Sub(before) {
 		t.Fatalf("invalid invocation timing: %+v; interval %v to %v", m, before, after)
 	}
@@ -125,7 +122,7 @@ func TestNodeHelperProcess(t *testing.T) {
 		})
 	case "echo":
 		fmt.Fprint(os.Stdout, string(input))
-		fmt.Fprintln(os.Stderr, "yah-session: leaf-session")
+		fmt.Fprintln(os.Stderr, "leaf diagnostic")
 	case "respond":
 		if string(input) != os.Getenv("GODEL_TEST_INPUT") {
 			fmt.Fprintln(os.Stderr, "altered or duplicated original input")
@@ -136,7 +133,7 @@ func TestNodeHelperProcess(t *testing.T) {
 			os.Exit(94)
 		}
 		fmt.Fprint(os.Stdout, args[1])
-		fmt.Fprintf(os.Stderr, "yah-session: %s\n", args[2])
+		fmt.Fprintln(os.Stderr, args[2])
 	case "output":
 		fmt.Fprint(os.Stdout, args[1])
 		fmt.Fprint(os.Stderr, args[2])
@@ -171,30 +168,13 @@ func TestInvokeInheritsDirectory(t *testing.T) {
 	}
 }
 
-func TestInvokeOutputAndSession(t *testing.T) {
+func TestInvokePreservesOutputAndDiagnostics(t *testing.T) {
 	for _, tc := range []struct {
-		name, stderr, session string
+		name, stderr string
 	}{
-		{
-			"canonical",
-			"diagnostic\nyah-session: first\nother\nyah-session: final-id\n",
-			"final-id",
-		},
-		{
-			"unterminated",
-			"yah-session: eof-id",
-			"eof-id",
-		},
-		{
-			"crlf",
-			"yah-session: crlf-id\r\n",
-			"crlf-id",
-		},
-		{
-			"not metadata",
-			"prefix yah-session: bad\n yah-session: bad\nyah-session:\nyah-session: \nyah-session: two words\n",
-			"",
-		},
+		{"multiline", "diagnostic\nyah-session: opaque-id\nother\n"},
+		{"unterminated", "diagnostic without a newline"},
+		{"crlf", "diagnostic\r\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			text := " \nexact output \n\n"
@@ -210,8 +190,8 @@ func TestInvokeOutputAndSession(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Text != text || result.Session != tc.session {
-				t.Fatalf("result = %+v, want text %q session %q", result, text, tc.session)
+			if result.Text != text {
+				t.Fatalf("result = %+v, want text %q", result, text)
 			}
 			tee, err := os.ReadFile(capture.Name())
 			if err != nil {
@@ -242,7 +222,7 @@ func TestExecuteTreeNestedOriginalInput(t *testing.T) {
 	inner := helperNode(t, "respond", "not JSON: continue", "inner")
 	inner.Env = append(inner.Env, "GODEL_TEST_INPUT="+input)
 	inner.Next = func(result Result) (*Node, error) {
-		if result != (Result{Text: "not JSON: continue", Session: "inner"}) {
+		if result != (Result{Text: "not JSON: continue"}) {
 			t.Fatalf("inner callback result = %+v", result)
 		}
 		return leaf, nil
@@ -250,7 +230,7 @@ func TestExecuteTreeNestedOriginalInput(t *testing.T) {
 	root := helperNode(t, "respond", "arbitrary output\n", "outer")
 	root.Env = append(root.Env, "GODEL_TEST_INPUT="+input)
 	root.Next = func(result Result) (*Node, error) {
-		if result != (Result{Text: "arbitrary output\n", Session: "outer"}) {
+		if result != (Result{Text: "arbitrary output\n"}) {
 			t.Fatalf("root callback result = %+v", result)
 		}
 		return inner, nil
@@ -259,10 +239,7 @@ func TestExecuteTreeNestedOriginalInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := execution{
-		Result:   Result{Text: input, Session: "leaf-session"},
-		Sessions: []string{"outer", "inner", "leaf-session"},
-	}
+	want := execution{Result: Result{Text: input}}
 	if !sameExecutionOutcome(got, want) || len(got.Invocations) != 3 {
 		t.Fatalf("execution = %+v, want %+v and three invocations", got, want)
 	}
@@ -276,13 +253,10 @@ func sameExecutionOutcome(got, want execution) bool {
 }
 
 func TestExecuteTreeStopAndNilLeaf(t *testing.T) {
-	root := helperNode(t, "output", " unchanged response \n", "yah-session: current\n")
+	root := helperNode(t, "output", " unchanged response \n", "")
 	root.Next = func(Result) (*Node, error) { return nil, nil }
 	got, err := executeTree(t.Context(), root, "task")
-	want := execution{
-		Result:   Result{Text: " unchanged response \n", Session: "current"},
-		Sessions: []string{"current"},
-	}
+	want := execution{Result: Result{Text: " unchanged response \n"}}
 	if err != nil || !sameExecutionOutcome(got, want) || len(got.Invocations) != 1 {
 		t.Fatalf("nil leaf = %+v, %v; want %+v and one invocation", got, err, want)
 	}
@@ -309,7 +283,7 @@ func TestExecuteTreeStopRoot(t *testing.T) {
 
 func TestExecuteTreeCallbackError(t *testing.T) {
 	failure := errors.New("caller could not interpret response")
-	root := helperNode(t, "output", "uninterpreted output\n", "yah-session: callback-session\n")
+	root := helperNode(t, "output", "uninterpreted output\n", "")
 	root.Next = func(result Result) (*Node, error) {
 		// Result is supplied by value; changes
 		// cannot rewrite history.
@@ -320,10 +294,7 @@ func TestExecuteTreeCallbackError(t *testing.T) {
 	if !errors.Is(err, failure) {
 		t.Fatalf("callback error = %v, want %v", err, failure)
 	}
-	want := execution{
-		Result:   Result{Text: "uninterpreted output\n", Session: "callback-session"},
-		Sessions: []string{"callback-session"},
-	}
+	want := execution{Result: Result{Text: "uninterpreted output\n"}}
 	if !sameExecutionOutcome(got, want) || len(got.Invocations) != 1 || got.Invocations[0].Error != failure.Error() {
 		t.Fatalf("callback failure lost result or observation: %+v", got)
 	}
@@ -350,16 +321,23 @@ func TestExecuteTreeInvalidExecutedNode(t *testing.T) {
 }
 
 func TestExecuteTreeSelectedCycleCancellation(t *testing.T) {
-	root := helperNode(t, "echo")
-	root.Next = func(Result) (*Node, error) { return root, nil }
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	root := helperNode(t, "output", "reply", "")
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	got, err := executeTree(ctx, root, "task")
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("selected cycle error = %v, want deadline exceeded", err)
+	calls := 0
+	root.Next = func(Result) (*Node, error) {
+		calls++
+		if calls == 2 {
+			cancel()
+		}
+		return root, nil
 	}
-	if len(got.Sessions) < 2 {
-		t.Fatalf("cycle did not repeat before cancellation: %+v", got)
+	got, err := executeTree(ctx, root, "task")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("selected cycle error = %v, want cancellation", err)
+	}
+	if len(got.Invocations) != 2 || calls != 2 {
+		t.Fatalf("cycle made %d calls to Next and recorded %d invocations, want two of each", calls, len(got.Invocations))
 	}
 }
 
@@ -373,15 +351,10 @@ func TestExecuteTreeFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected failure")
 	}
-	for _, detail := range []string{"failed-session", "diagnostic detail", "exit status 23"} {
-		if !strings.Contains(err.Error(), detail) {
-			t.Errorf("error %q missing %q", err, detail)
-		}
+	if want := "exit status 23; stderr: diagnostic detail\nyah-session: failed-session\n"; !strings.HasSuffix(err.Error(), want) {
+		t.Errorf("error = %q, want suffix %q", err, want)
 	}
-	want := execution{
-		Result:   Result{Text: "partial output\n", Session: "failed-session"},
-		Sessions: []string{"failed-session"},
-	}
+	want := execution{Result: Result{Text: "partial output\n"}}
 	if !sameExecutionOutcome(got, want) || len(got.Invocations) != 1 || got.Invocations[0].Error != "exit status 23" {
 		t.Fatalf("failed execution = %+v, want %+v and failure observation", got, want)
 	}

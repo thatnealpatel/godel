@@ -2,7 +2,6 @@ package godel
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,26 +33,17 @@ type improvementContext struct {
 	Directory, Input, Output                             string
 	Failure                                              string
 	Loop, Stopped                                        bool
-	Sessions                                             []string
 	Invocations                                          []metadata
 }
 
-var (
-	improvementPrompt = improvementInstructions + improvementRider
+const improvementPrompt = `Assess the program's work toward Goal and improve it if useful.
+Source is the absolute path to the program you may change, regardless of your working directory.
+RunRecord and prior run records are read-only evidence. Leave Godel's bookkeeping unchanged.
+You may keep notes in ProgramDirectory.`
 
-	//go:embed templates/improvement.md
-	improvementInstructions string
-
-	//go:embed templates/rider.md
-	improvementRider string
-)
-
-// improvementStderr prefixes each diagnostic
-// line so a composing runner cannot mistake
-// an auxiliary improvement session marker
-// for the work session. invokeWithStderr
-// still captures the raw bytes for this
-// attempt's session and errors.
+// improvementStderr labels displayed
+// diagnostics; errors retain the raw
+// stderr.
 type improvementStderr struct{ start bool }
 
 func (w *improvementStderr) Write(p []byte) (int, error) {

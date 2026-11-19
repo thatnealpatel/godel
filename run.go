@@ -68,7 +68,6 @@ func (g *Godel) run(ctx context.Context, params *Params) (result *Result, retErr
 		}
 	}()
 	work, err := executeTree(ctx, params.Node, input)
-	r.Sessions = work.Sessions
 	r.Invocations = work.Invocations
 	r.Stopped = work.Stopped
 	r.FinalResponse = work.Result.Text
@@ -99,11 +98,9 @@ func (g *Godel) run(ctx context.Context, params *Params) (result *Result, retErr
 			Failure:          r.Failure,
 			Loop:             params.Loop,
 			Stopped:          work.Stopped,
-			Sessions:         work.Sessions,
 			Invocations:      work.Invocations,
 		})
 		r.ImprovementInvocations = improvement.Invocations
-		r.Sessions = append(r.Sessions, improvement.Sessions...)
 		r.ImprovementResponse = improvement.Result.Text
 		if err != nil {
 			r.ImprovementError = err.Error()

@@ -239,8 +239,8 @@
 // &godel.Node{Exec: "cat", Next: choose}. Then choose receives the resolved
 // task in Result.Text, even when the input came from history.
 //
-// At Stop, the assessment's entire Result is retained, including its JSON
-// text and session.
+// At Stop, the assessment's entire Result is retained, including the complete
+// JSON decision.
 // Next does not extract an answer or rewrite the result. Other programs can
 // interpret plain text, structured output, or any other process response.
 //
@@ -275,7 +275,7 @@
 // subagents to review the same draft in parallel and return one assessment
 // on stdout. The parent need not know how the review was divided. If it needs
 // each reviewer's findings, it can ask for them in the child's output. The
-// parent records one invocation and at most one session marker for that node.
+// parent records one invocation for that node, not one per reviewer.
 // Context cancellation targets the node's systemd scope. A second Run for
 // the same canonical source directory panics if the program lock is held.
 //
@@ -300,9 +300,8 @@
 // The goal passed to New is improvement context. Work and decision nodes need
 // their instructions in Args; the goal is not added to their prompts.
 //
-// Each registered program keeps run records and learning materials under
-// $HOME/.godel. Learning materials start as improvement.md and can change form
-// as useful knowledge accumulates. Run records describe the work, not the
+// Each registered program keeps run records under $HOME/.godel. An improver
+// can keep its own notes in ProgramDirectory; no notes file is required. Run records describe the work, not the
 // source that produced it. `godel` does not copy or version the live source.
 // If you want to compare or undo edits, preserve the source before the run
 // using your own version control or backup workflow.
@@ -310,8 +309,8 @@
 // Nodes can include findings, checks, resource reports, or artifact references
 // in their output when useful to later work or improvement. Choose a form that
 // fits the program. There is no required evidence schema or evaluation gate.
-// These reports come from the nodes. `godel` itself records invocation timing,
-// errors, and captured session IDs. History keeps the final work response, not
+// These reports come from the nodes. `godel` itself records invocation timing
+// and errors. History keeps the final work response, not
 // every intermediate stdout. To make an intermediate result available for
 // later improvement, save it durably and name its path in the improver's
 // arguments or in the final work output.
@@ -353,10 +352,9 @@
 // PATH before applying node environment overrides.
 //
 // Each process receives finite stdin and EOF. Its stdout is preserved exactly.
-// Its stderr is also sent to the runner's stderr. The last valid stderr line
-// of the form "yah-session: ID" supplies [Result.Session]. This Yah marker is
-// the only session protocol. Other harnesses without it leave Session empty;
-// `godel` does not normalize backend session IDs.
+// Its stderr is sent to the runner's stderr as diagnostics, not interpreted
+// as session metadata. A harness that needs a transcript link can save it
+// itself or include it in its output.
 //
 // A failed process returns an error, not a successful partial result.
 // On every returned Run error, the result is nil.
@@ -366,11 +364,11 @@
 // are passed verbatim; the caller supplies all harness and output instructions.
 //
 // After a successful process invocation, Next receives its Result by value,
-// including Text and Session. A missing Next or a nil continuation with nil
+// with stdout in Text. A missing Next or a nil continuation with nil
 // error is an ordinary leaf: the current Result becomes the tree's result.
 // Next may return another node to continue, or an error to fail execution.
 // Callback errors are retained in the current invocation's observation; partial
-// output and sessions remain in history. Next is not called after process failure.
+// output remains in history. Next is not called after process failure.
 //
 // Returning [Stop] ends the tree normally with the current Result unchanged.
 // Unlike an ordinary leaf, Stop in the work tree also prevents a loop launch.
@@ -407,10 +405,10 @@
 //
 // Exec, Args, and Env follow the ordinary process contract. Args are passed
 // verbatim. The library adds no flags or prompt arguments. Instead,
-// stdin contains the complete improvement instructions and guidance, followed
+// stdin contains a short instruction to assess the run against the goal, followed
 // by a "# Run context" heading and a JSON object. The object contains the goal
 // and existing run evidence, including Source, input, output, failure, and
-// invocation history.
+// invocation history. Supply any workflow specific to the program through Args.
 //
 // Every continuation receives that same complete stdin, not the preceding
 // process's output. Next follows the same contract as in the work tree. A leaf
@@ -418,9 +416,8 @@
 // tree ends only improvement; it never suppresses an outer loop launch.
 //
 // Improvement stderr is displayed with a "godel: improvement: " prefix on each
-// line, for every invocation. Raw diagnostics still supply errors and any
-// yah-session marker. History retains the final response, error, all ordered
-// invocation observations, and all captured sessions.
+// line, for every invocation. Errors retain the raw diagnostics. History retains the final response,
+// error, and ordered invocation observations.
 //
 // # Reference: work outcomes and loops
 //

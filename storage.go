@@ -1,7 +1,6 @@
 package godel
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	mathrand "math/rand/v2"
@@ -31,14 +30,6 @@ func registerProgram(source string) (*program, error) {
 	dir := filepath.Join(root, id)
 	if err := os.Mkdir(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create program %q: %w", id, err)
-	}
-	// Seed learning once, before publication. Later
-	// nodes may reorganize or replace this entry
-	// point; registration never recreates it on reuse.
-	learning := fmt.Sprintf(learningTemplate, source)
-	if err := os.WriteFile(filepath.Join(dir, "improvement.md"), []byte(learning), 0600); err != nil {
-		os.RemoveAll(dir)
-		return nil, fmt.Errorf("initialize learning materials: %w", err)
 	}
 	manifest[source] = id
 	if err := atomicJSON(filepath.Join(root, "manifest.json"), manifest); err != nil {
@@ -170,6 +161,3 @@ func atomicJSON(path string, value any) error {
 	}
 	return nil
 }
-
-//go:embed templates/learning.md
-var learningTemplate string
